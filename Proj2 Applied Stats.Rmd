@@ -1,0 +1,706 @@
+---
+title: "Project2 Applied Stats Initial EDA"
+author: "Halle Purdom"
+date: "7/18/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Loading libraries -- TODO: remove redundnacies
+```{r}
+##Halle Libraries
+library(naniar)
+library(ggplot2)
+library(plyr)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(GGally)
+library(aplore3)
+library(gplots)
+library(ResourceSelection)
+library(ggplot2)
+library(rgl) ##For mac users you may need to download Xquartz before the 3d plots
+#will run.
+library(tree)
+library(ISLR)
+library(randomForest)
+
+##Eli Libraries
+
+library(ggcorrplot)
+library(visdat)
+library(dplyr)
+library(tidyverse)
+library(plyr)
+library(leaps)
+library(zoo)
+library(ggplot2)
+library(GGally)
+library(plotrix)
+library(usmap)
+library(ggthemes)
+library(caret)
+library(class)
+library(e1071)
+library(heplots)
+library("stringr")  
+
+##Brandon Libraries
+library(glmnet)
+library(MASS)
+library(epitools)
+library(naniar)
+library(tidyverse)
+library(mice)
+library(ggplot2)
+library(htmlwidgets)
+library(caTools)
+library(class)
+library(caret)
+library(GGally)
+library(randomForest)
+#library(sjPlot) #TODO: couldn't find sjPlot to install...do we need this?
+```
+
+#Bank Data: Predicting if a customer will subscribe to a term deposit.
+
+#Read data
+
+We have 36548 events classified as no and 4640 classified as yes
+
+```{r}
+
+bank.additional.full.df <- read.csv2(file = "/Users/hallepurdom/Desktop/SMU/Classes/Applied Statistics/Project 2 Details 2021/Bank/bank-additional/bank-additional-full.csv", header = TRUE, sep = ";")
+
+head(bank.additional.full.df)
+
+# we can see that we need to create factors from the strings
+str(bank.additional.full.df)
+
+
+bank.additional.full.df$job <- as.factor(gsub('\\s+', '', bank.additional.full.df$job))
+bank.additional.full.df$y<-as.factor(bank.additional.full.df$y)
+bank.additional.full.df$default <- as.factor(gsub('\\s+', '', bank.additional.full.df$default))
+bank.additional.full.df$marital <- as.factor(gsub('\\s+', '', bank.additional.full.df$marital))
+bank.additional.full.df$education <- as.factor(gsub('\\s+', '', bank.additional.full.df$education))
+bank.additional.full.df$housing <- as.factor(gsub('\\s+', '', bank.additional.full.df$housing))
+bank.additional.full.df$loan <- as.factor(gsub('\\s+', '', bank.additional.full.df$loan))
+bank.additional.full.df$contact <- as.factor(gsub('\\s+', '', bank.additional.full.df$contact))
+bank.additional.full.df$month <- as.factor(gsub('\\s+', '', bank.additional.full.df$month))
+bank.additional.full.df$day_of_week <- as.factor(gsub('\\s+', '', bank.additional.full.df$day_of_week))
+bank.additional.full.df$poutcome <- as.factor(gsub('\\s+', '', bank.additional.full.df$poutcome))
+
+
+bank.additional.full.df$emp.var.rate <-as.numeric(bank.additional.full.df$emp.var.rate)
+bank.additional.full.df$cons.price.idx <-as.numeric(bank.additional.full.df$cons.price.idx)
+bank.additional.full.df$cons.conf.idx <-as.numeric(bank.additional.full.df$cons.conf.idx)
+bank.additional.full.df$cons.conf.idx <-as.numeric(bank.additional.full.df$cons.conf.idx)
+bank.additional.full.df$euribor3m <-as.numeric(bank.additional.full.df$euribor3m)
+bank.additional.full.df$nr.employed <-as.numeric(bank.additional.full.df$nr.employed)
+ 
+dim(bank.additional.full.df) # 41188    
+
+#remove duplicates
+bank.additional.full.df = bank.additional.full.df[!duplicated(bank.additional.full.df), ]
+
+dim(bank.additional.full.df) # 41176    
+
+str(bank.additional.full.df)
+
+head(bank.additional.full.df)
+
+summary(bank.additional.full.df)
+
+#Visualizing balance of response levels
+plot(bank.additional.full.df$y)
+
+
+bank <- bank.additional.full.df
+```
+#Missing values
+
+using vis_missto see if there are NA in the data - seems like 0 NA
+but additional EDA I found a lot of "unknown" values
+
+Potential solution: 
+I will convert unknown to NA and treat it as a missing values
+
+After switching to NA we can see that column default has over 20% of missing data.
+Education has 4.2% of the missing data. etc...
+
+For now I will:
+1. Drop default column - has only 3 "yes" - rest is "unknown" or "no"
+2. drop lines of the data with NA
+
+We might consider better ways to manage NA when we talk - use mean / predictions etc.
+#TODO: try removing unknowns versus leaving in the dataset and see if it significantly affects outcome
+
+```{r}
+
+vis_miss(bank.additional.full.df)
+
+unique(bank.additional.full.df$job)       # replace job unknown with na
+unique(bank.additional.full.df$education) # replace job unknown with na
+unique(bank.additional.full.df$default)   # default job unknown with na
+unique(bank.additional.full.df$housing)   # default job unknown with na
+unique(bank.additional.full.df$loan)      # default job unknown with na
+
+
+# Potential NA solution : 
+
+bank.additional.full.df[bank.additional.full.df=="unknown"] <- NA
+
+unique(bank.additional.full.df$housing)
+
+unique(bank.additional.full.df$job)
+
+vis_miss(bank.additional.full.df)
+
+bank.additional.full.df<- bank.additional.full.df[ , -which(names(bank.additional.full.df) %in% c("default"))]
+
+bank.additional.full.df = na.omit(bank.additional.full.df)
+
+vis_miss(bank.additional.full.df)
+
+unique(bank.additional.full.df$housing)
+
+
+```
+#Separating Numeric and Categorical Predictors/Explanatories
+```{r}
+numeric.features <- c("age", "duration", "campaign", "pdays", "previous", "emp.var.rate",
+                      "cons.price.idx" , "cons.conf.idx", "euribor3m", "nr.employed")
+
+numeric.features.with.Class <- c("age", "duration", "campaign", "pdays", "previous", "emp.var.rate",
+                      "cons.price.idx" , "cons.conf.idx", "euribor3m", "nr.employed", "y")
+
+
+#bank.additional.full.df$campaign
+
+bank.additional.full.df.numeric <- subset(bank.additional.full.df, select = numeric.features )
+
+bank.additional.full.df.factors <- bank.additional.full.df[,!(names(bank.additional.full.df) %in% numeric.features)]
+
+bank.additional.full.df.numeric.with.Class <- subset(bank.additional.full.df, select = numeric.features.with.Class )
+
+head(bank.additional.full.df.factors)
+
+```
+###### Objective 1: Part 1 -- EDA ######
+
+
+#Summary Statistics for Numeric Explanatories (Aggregate Function) - run in console to see results, won't print in Rmd
+```{r}
+aggregate(age~y, data=bank, summary)
+aggregate(duration~y, data=bank, summary)
+aggregate(campaign~y, data=bank, summary)
+aggregate(pdays~y, data=bank, summary)
+aggregate(previous~y, data=bank, summary)
+aggregate(emp.var.rate~y, data=bank, summary)
+aggregate(cons.price.idx~y, data=bank, summary)
+aggregate(cons.conf.idx~y, data=bank, summary)
+aggregate(euribor3m~y, data=bank, summary)
+aggregate(nr.employed~y, data=bank, summary)
+```
+#Count Tables for Categorical Explanatories
+```{r}
+ftable(addmargins(table(bank$y,bank$job)))
+ftable(addmargins(table(bank$y,bank$marital)))
+ftable(addmargins(table(bank$y,bank$education)))
+ftable(addmargins(table(bank$y,bank$default)))
+ftable(addmargins(table(bank$y,bank$housing)))
+ftable(addmargins(table(bank$y,bank$loan)))
+ftable(addmargins(table(bank$y,bank$contact)))
+ftable(addmargins(table(bank$y,bank$month)))
+ftable(addmargins(table(bank$y,bank$day_of_week)))
+ftable(addmargins(table(bank$y,bank$poutcome)))
+```
+#Proportion Count Tables for Categorical Explanatories
+```{r}
+prop.table(table(bank$y,bank$job),2)
+prop.table(table(bank$y,bank$marital),2)
+prop.table(table(bank$y,bank$education),2)
+prop.table(table(bank$y,bank$default),2)
+prop.table(table(bank$y,bank$housing),2)
+prop.table(table(bank$y,bank$loan),2)
+prop.table(table(bank$y,bank$contact),2)
+prop.table(table(bank$y,bank$month),2)
+prop.table(table(bank$y,bank$day_of_week),2)
+prop.table(table(bank$y,bank$poutcome),2)
+```
+#Visualize Numeric
+```{r}
+plot(bank$age~bank$y,col=c("red","blue"))
+plot(bank$duration~bank$y,col=c("red","blue"))
+plot(bank$campaign~bank$y,col=c("red","blue"))
+plot(bank$pdays~bank$y,col=c("red","blue"))
+plot(bank$previous~bank$y,col=c("red","blue"))
+plot(bank$emp.var.rate~bank$y,col=c("red","blue"))
+plot(bank$cons.price.idx~bank$y,col=c("red","blue"))
+plot(bank$cons.conf.idx~bank$y,col=c("red","blue"))
+plot(bank$euribor3m~bank$y,col=c("red","blue"))
+plot(bank$nr.employed~bank$y,col=c("red","blue"))
+```
+#Visualize Categorical
+```{r}
+plot(bank$y~bank$job,col=c("red","blue"))
+plot(bank$y~bank$marital,col=c("red","blue"))
+plot(bank$y~bank$education,col=c("red","blue"))
+plot(bank$y~bank$default,col=c("red","blue"))
+plot(bank$y~bank$housing,col=c("red","blue"))
+plot(bank$y~bank$loan,col=c("red","blue"))
+plot(bank$y~bank$contact,col=c("red","blue"))
+plot(bank$y~bank$month,col=c("red","blue"))
+plot(bank$y~bank$day_of_week,col=c("red","blue"))
+plot(bank$y~bank$poutcome,col=c("red","blue"))
+```
+#Correlation between Continuos predictors
+```{r}
+pairs(bank[,16:20],col=bank$y)
+pairs(bank[,c(1,11:14)],col=bank$y)
+
+my.cor<-cor(bank[,c(1,11:14,16:20)])
+my.cor
+
+```
+
+#Checking correlation between numeric predictors
+```{r , fig.width = 15}
+corr <- round(cor(bank.additional.full.df.numeric), 2)
+ggcorrplot(corr,  type = "lower", lab = TRUE, title = "Correlations - only numerical variables" )
+
+```
+
+#PCA with numeric predictors
+
+By using PCA we can see that just numerical features do not create great split between yes/no
+but we do see clustering effect which can help us cluster majority of the features . 
+
+```{r}
+
+head(bank.additional.full.df.numeric)
+
+pc.bank<-prcomp(bank.additional.full.df.numeric,scale.=TRUE)
+
+?prcomp
+pc.bank.scores<-pc.bank$x
+
+#Adding the response column to the PC's data frame
+pc.bank.scores<-data.frame(pc.bank.scores)
+pc.bank.scores$y<-bank.additional.full.df$y
+
+ggplot(data = pc.bank.scores, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank Marketing Data")
+
+
+ggplot(data = pc.bank.scores, aes(x = PC1, y = PC3)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank Marketing Data")
+
+ggplot(data = pc.bank.scores, aes(x = PC1, y = PC4)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank Marketing Data")
+
+ggplot(data = pc.bank.scores, aes(x = PC1, y = PC5)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank Marketing Data")
+
+pc.bank$sdev
+
+pc.eigen<-(pc.bank$sdev)^2
+pc.prop<-pc.eigen/sum(pc.eigen)
+pc.cumprop<-cumsum(pc.prop)
+
+pc.prop
+
+plot(1:10,pc.prop,type="l",main="Scree Plot",ylim=c(0,1),xlab="PC #",ylab="Proportion of Variation")
+lines(1:10,pc.cumprop,lty=3)
+
+```
+###### Objective 1: Part 2 -- Logistic Regression Model ######
+#train / test for LASSO
+```{r}
+
+set.seed(88998)
+sample.size <- floor(0.75 * nrow(bank.additional.full.df))
+train_index <- sample(seq_len(nrow(bank.additional.full.df)), size = sample.size)
+train = bank.additional.full.df[train_index,]
+test = bank.additional.full.df[-train_index,]
+
+head(train)
+
+ncol(train)
+
+X_train <- train[, 1:19] 
+Y_train <- train[, 20]
+head(Y_train)
+
+X_test <- test[, 1:19] 
+Y_test <- test[, 20]
+
+train.df <- data.frame(X_train, Y_train)
+
+```
+
+#Logistic Regression - LASSO
+```{r}
+
+data.train.x <- model.matrix(train$y~.,train)
+y.train.predictor <- subset(train, select = c("y"))
+data.train.y <- as.matrix(y.train.predictor) 
+
+cvfit <- cv.glmnet(data.train.x, data.train.y, family = "binomial", type.measure = "class", alpha = 1, nlambda = 1000)
+
+cvfit
+plot(cvfit)
+coef(cvfit, s = "lambda.min")
+
+print("CV Error Rate:")
+cvfit$cvm[which(cvfit$lambda==cvfit$lambda.min)]
+
+#Optimal penalty
+print("Penalty Value:")
+cvfit$lambda.min
+
+finalmodel<-glmnet(data.train.x, data.train.y, family = "binomial",lambda=cvfit$lambda.min)
+
+summary(finalmodel)
+
+
+finalmodel$beta[,1]
+
+format(as.matrix(coef(cvfit, s = "lambda.min")), scientific=F)
+
+
+#### ROC
+
+dat.test.x<-model.matrix(test$y~.,test)
+  
+fit.pred.lasso <- predict(finalmodel, newx = dat.test.x, type = "response")
+
+
+
+
+library(ROCR)
+results.lasso<-prediction(fit.pred.lasso, test$y,label.ordering=c("no","yes"))
+roc.lasso = performance(results.lasso, measure = "tpr", x.measure = "fpr")
+plot(roc.lasso,colorize = TRUE)
+auc <- performance(results.lasso, measure = "auc")
+auc.value <- round(auc@y.values[[1]],2)
+auc.value
+text(x = .5, y = .8,paste("Model AUC = ", auc.value))
+abline(a=0, b= 1)
+
+auc@y.values
+
+cutoff<- 0.2
+class.lasso<-factor(ifelse(fit.pred.lasso>cutoff,"yes","no"))
+confusionMatrix(class.lasso,test$y)
+
+
+coef(cvfit, s = "lambda.min")
+
+```
+
+#simple glm
+```{r}
+
+## add relevant columns from lasso to glm
+simple.log<-glm(y~ job + marital + education +  contact + 
+                  month + day_of_week + duration + campaign + 
+                  pdays + previous + poutcome + emp.var.rate +
+                   cons.conf.idx  + nr.employed ,family="binomial",data=train)
+
+
+
+summary(simple.log)
+
+
+
+```
+
+
+#Forward Selection Logistic Regression Model
+```{r}
+#Full model all variables
+model.main<-glm(y ~ ., data=bank,family = binomial(link="logit"))
+#(vif(model.main)[,3])^2
+hoslem.test(model.main$y, fitted(model.main), g=10)
+summary(model.main)
+exp(cbind("Odds ratio" = coef(model.main), confint.default(model.main, level = 0.95)))
+plot(model.main) #residual diagnostics
+
+#Logistic Model from Null by Chisquared (Forward Selection)
+model.null<-glm(y ~ 1, data=bank,family = binomial(link="logit"))
+step(model.null,
+     scope = list(upper=model.main),
+     direction="forward",
+     test="Chisq",
+     data=newAuto)
+
+#Resulting model: y ~ duration + nr.employed + month + poutcome + emp.var.rate + cons.price.idx + job + contact + euribor3m + default + day_of_week + pdays + campaign + cons.conf.idx
+```
+###### Objective 2: Part 1 -- Complex Logistic Regression Model ######
+
+# Advanced lasso model
+```{r}
+## setting future need parameters and model
+x = model.matrix(y~job + education + contact + month + duration + pdays + emp.var.rate + cons.conf.idx + nr.employed
+                 + duration*job + duration*education + duration*contact + duration*month 
+                 + pdays*job + pdays*education + pdays*contact + pdays*month
+                 + emp.var.rate*job + emp.var.rate*education + emp.var.rate*contact + emp.var.rate*month 
+                 + cons.conf.idx*job + cons.conf.idx*education + cons.conf.idx*contact + cons.conf.idx*month
+                 + nr.employed*job + nr.employed*education + nr.employed*contact + nr.employed*month, train)
+y = train$y
+
+x_test = model.matrix(y~job + education + contact + month + duration + pdays + emp.var.rate + cons.conf.idx + nr.employed
+                      + duration*job + duration*education + duration*contact + duration*month 
+                      + pdays*job + pdays*education + pdays*contact + pdays*month
+                      + emp.var.rate*job + emp.var.rate*education + emp.var.rate*contact + emp.var.rate*month 
+                      + cons.conf.idx*job + cons.conf.idx*education + cons.conf.idx*contact + cons.conf.idx*month
+                      + nr.employed*job + nr.employed*education + nr.employed*contact + nr.employed*month, test)
+y_test = test$y
+
+## Creating cv output to determine the best lamda
+cv_output = cv.glmnet(x, y, alpha = 1, family = "binomial")
+
+## Identifying best lamda
+best_lam = cv_output$lambda.1se
+
+## Rebuilding the model with best lamda value identified
+lasso_best = glmnet(x, y, alpha = 1, lambda = best_lam, family = "binomial")
+
+## Predicts the classifations of the test set
+classifications = predict(lasso_best, newx = x_test, s = "lambda.1se", type= "class")
+
+## Creates and prints confusion matrix
+lasso_CM = confusionMatrix(table(classifications, y_test))
+print(lasso_CM)
+
+## Predicts classifation in the format to determine the AUC
+AUC = predict(lasso_best, newx = x_test, s = "lambda.1se")
+
+## Assess the performance of the model including AUC
+lasso_AUC = assess.glmnet(AUC, newy = y_test, family = "binomial")
+print(lasso_AUC)
+```
+
+
+
+###### Objective 2: Part 2 -- LDA / QDA ######
+
+#LDA
+```{r}
+
+
+set.seed(88998)
+sample.size <- floor(0.75 * nrow(bank.additional.full.df.numeric.with.Class))
+train_index.numeric <- sample(seq_len(nrow(bank.additional.full.df)), size = sample.size)
+train.numeric  = bank.additional.full.df.numeric.with.Class[train_index.numeric,]
+test.numeric  = bank.additional.full.df.numeric.with.Class[-train_index.numeric,]
+
+# makes sure for test we have balance classes
+ train.numeric = as.data.frame(upSample(x = train.numeric %>% dplyr::select(-!!c("y")), y = train.numeric$y))
+ 
+ head(train.numeric)
+
+
+X_test.numeric <- test.numeric[, 1:10] 
+Y_test.numeric <- test.numeric[, 11]
+
+
+
+lda.model <- lda(Class ~ ., data = train.numeric)
+predict.lda <- predict(lda.model, newdata = X_test.numeric, type = "response")
+
+
+# https://arulvelkumar.wordpress.com/2017/09/03/prediction-function-in-r-number-of-cross-validation-runs-must-be-equal-for-predictions-and-labels/
+
+predictions <- prediction(as.data.frame(predict.lda)[,3],Y_test.numeric)
+
+
+roc.lda = performance(predictions, measure = "tpr", x.measure = "fpr")
+plot(roc.lda, colorize=TRUE)
+auc.value <- performance(predictions, measure = "auc")
+auc.value <- round(auc.value@y.values[[1]],2)
+abline(a=0, b= 1)
+text(x = .5, y = .8,paste("Model AUC = ", auc.value))
+
+confusionMatrix(table(predict.lda$class,Y_test.numeric))
+
+
+
+```
+
+#LDA Assumtion test
+using the following tutorial: https://thatdatatho.com/assumption-checking-lda-vs-qda-r-tutorial-2/
+
+```{r}
+
+#install.packages("heplots")
+#library(heplots)
+
+# We can see that Covariance  between groups is very different 
+# this will be in issue as LDA requires  Equal Covariance
+heplots::covEllipses(train.numeric[,1:10], 
+                     train.numeric$Class, 
+                     fill = TRUE, 
+                     pooled = FALSE, 
+                     col = c("blue", "red"), 
+                     variables = c(1:10), 
+                     fill.alpha = 0.05)
+
+
+#hypothesis test for Equal Covariance
+#H0  = Covariance matrices of the outcome variable are equal across all groups
+#Ha =  = Covariance matrices of the outcome variable are different for at least one group
+# p-value is < 0.005 therefore we reject H0 -> we should use QDA and not LDA
+boxm <- heplots::boxM(train.numeric[, c(1:10)], train.numeric$Class)
+boxm
+
+```
+
+
+#QDA
+```{r}
+
+
+set.seed(88998)
+#same as LDA
+sample.size <- floor(0.75 * nrow(bank.additional.full.df.numeric.with.Class))
+train_index.numeric <- sample(seq_len(nrow(bank.additional.full.df)), size = sample.size)
+train.numeric  = bank.additional.full.df.numeric.with.Class[train_index.numeric,]
+test.numeric  = bank.additional.full.df.numeric.with.Class[-train_index.numeric,]
+
+# makes sure for test we have balance classes
+ train.numeric = as.data.frame(upSample(x = train.numeric %>% dplyr::select(-!!c("y")), y = train.numeric$y))
+ 
+ head(train.numeric)
+
+
+X_test.numeric <- test.numeric[, 1:10] 
+Y_test.numeric <- test.numeric[, 11]
+
+
+
+qda.model <- qda(Class ~ ., data = train.numeric)
+predict.qda <- predict(qda.model, newdata = X_test.numeric, type = "response")
+
+
+# https://arulvelkumar.wordpress.com/2017/09/03/prediction-function-in-r-number-of-cross-validation-runs-must-be-equal-for-predictions-and-labels/
+
+predictions <- prediction(as.data.frame(predict.qda)[,3],Y_test.numeric)
+
+
+roc.qda = performance(predictions, measure = "tpr", x.measure = "fpr")
+plot(roc.qda, colorize=TRUE)
+auc.value <- performance(predictions, measure = "auc")
+auc.value <- round(auc.value@y.values[[1]],2)
+abline(a=0, b= 1)
+text(x = .5, y = .8,paste("Model AUC = ", auc.value))
+
+confusionMatrix(table(predict.qda$class,Y_test.numeric))
+
+
+
+```
+
+###### Objective 2: Part 3 -- Nonparametric Models (Decision trees and Random Forest) ######
+
+#Tree
+```{r}
+
+y2 <- as.factor(bank$y)
+bank2=data.frame(bank,y2)
+
+set.seed(2)
+train=sample(1:nrow(bank2),20594) #split in half
+bank2.test=bank2[-train,]
+
+y2.test=y2[-train]
+
+tree.bank2=tree(y2~.-y, bank2, subset=train)
+tree.pred=predict(tree.bank2, bank2.test, type="class")
+table(tree.pred,y2.test)
+
+summary(tree.bank2)
+
+#Overall Accuracy: TP+TN/total
+(17195+1433)/41188
+#Sensitivity: TP/P
+(1433)/(1433+850)
+#Specificity: TN/N
+(17195)/(17195+1116)
+
+```
+
+#Pruning tree CV -- varifies 8 node tree is best
+```{r}
+set.seed(3)
+par(mfrow=c(1,1))
+cv.bank2=cv.tree(tree.bank2,FUN=prune.misclass)
+names(cv.bank2)
+plot(cv.bank2) #tree is best size already (8)
+
+#Fit the pruned tree and visualize
+prune.bank2=prune.misclass(tree.bank2,best=8)
+plot(prune.bank2)
+text(prune.bank2,pretty=0)
+
+tree.pred=predict(prune.bank2,bank2.test,type="class")
+table(tree.pred,y2.test)
+```
+
+#Tree ROC curve
+```{r}
+tree.pred=predict(prune.bank2,bank2.test,type="vector")
+head(tree.pred)
+
+library(ROCR)
+pred <- prediction(tree.pred[,2], bank2.test$y2)
+roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
+#Note in the following code the term "train" means nothing here. 
+#I'm just rinsing and repeating code the produces the curve.
+auc.train <- performance(pred, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf,main="AUC of Test set of a Single Tree")
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+
+```
+
+#Random Forest
+```{r}
+rf.bank2<-randomForest(y2~.-y,bank2,subset=train,mtry=5,importance=T,ntree=100)
+
+fit.pred<-predict(rf.bank2,newdata=bank2.test,type="response")
+table(fit.pred,bank2.test$y2) #Default prediction uses .5 as cut off you can change it specifying "cutoff" option
+
+#Overall Accuracy: TP+TN/total
+(17599+1216)/41188
+#Sensitivity: TP/P
+(1216)/(1216+1067)
+#Specificity: TN/N
+(17599)/(17599+712)
+
+rf.pred<-predict(rf.bank2,newdata=bank2.test,type="prob")
+pred <- prediction(rf.pred[,2], bank2.test$y2)
+roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
+#Note in the following code the term "train" means nothing here. 
+#I'm just rinsing and repeating code the produces the curve.
+auc.train <- performance(pred, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf,main="AUC of Test set RF - mtry=5")
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+
+varImpPlot (rf.bank2,type=1,main="Variable Importance")
+varImpPlot (rf.bank2,type=2,main="Variable Importance")
+```
+
