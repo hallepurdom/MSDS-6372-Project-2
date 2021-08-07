@@ -43,8 +43,6 @@ library(mice)
 library(htmlwidgets)
 library(caTools)
 library(randomForest)
-
-#library(sjPlot) #couldn't find sjPlot to install...do we need this?
 ```
 
 #Bank Data: Predicting if a customer will subscribe to a term deposit.
@@ -327,7 +325,7 @@ train.df <- data.frame(X_train, Y_train)
 #Logistic Regression - LASSO
 ```{r}
 
-data.train.x <- model.matrix(train$y~.,train)
+data.train.x <- model.matrix(train$y~.-y,train)
 y.train.predictor <- subset(train, select = c("y"))
 data.train.y <- as.matrix(y.train.predictor) 
 
@@ -401,25 +399,36 @@ summary(simple.log)
 
 ```
 
+#Forward Selection Logistic Regression Model
+```{r}
+#Full model all variables
+model.main<-glm(y ~ ., data=train,family = binomial(link="logit"))
+#(vif(model.main)[,3])^2
+hoslem.test(model.main$y, fitted(model.main), g=10)
+summary(model.main)
+exp(cbind("Odds ratio" = coef(model.main), confint.default(model.main, level = 0.95)))
+plot(model.main) #residual diagnostics
+
+#Logistic Model from Null by Chisquared (Forward Selection)
+model.null<-glm(y ~ 1, data=train,family = binomial(link="logit"))
+step(model.null,
+     scope = list(upper=model.main),
+     direction="forward",
+     test="Chisq",
+     data=newAuto)
+
+#Resulting model: y ~ duration + nr.employed + month + poutcome + emp.var.rate + cons.price.idx + job + contact + euribor3m + default + day_of_week + pdays + campaign + cons.conf.idx
+```
+
 ###### Objective 2: Part 1 -- Complex Logistic Regression Model ######
 
 # Advanced lasso model
 ```{r}
 ## setting future need parameters and model
-x = model.matrix(y~job + education + contact + month + duration + pdays + emp.var.rate + cons.conf.idx + nr.employed
-                 + duration*job + duration*education + duration*contact + duration*month 
-                 + pdays*job + pdays*education + pdays*contact + pdays*month
-                 + emp.var.rate*job + emp.var.rate*education + emp.var.rate*contact + emp.var.rate*month 
-                 + cons.conf.idx*job + cons.conf.idx*education + cons.conf.idx*contact + cons.conf.idx*month
-                 + nr.employed*job + nr.employed*education + nr.employed*contact + nr.employed*month, train)
+x = model.matrix(y~job + education + contact + month + duration + pdays + emp.var.rate + cons.conf.idx + nr.employed + pdays*job + pdays*education + pdays*contact + pdays*month + emp.var.rate*job + emp.var.rate*education + emp.var.rate*contact + emp.var.rate*month + cons.conf.idx*job + cons.conf.idx*education + cons.conf.idx*contact + cons.conf.idx*month + nr.employed*job + nr.employed*education + nr.employed*contact + nr.employed*month, train)
 y = train$y
 
-x_test = model.matrix(y~job + education + contact + month + duration + pdays + emp.var.rate + cons.conf.idx + nr.employed
-                      + duration*job + duration*education + duration*contact + duration*month 
-                      + pdays*job + pdays*education + pdays*contact + pdays*month
-                      + emp.var.rate*job + emp.var.rate*education + emp.var.rate*contact + emp.var.rate*month 
-                      + cons.conf.idx*job + cons.conf.idx*education + cons.conf.idx*contact + cons.conf.idx*month
-                      + nr.employed*job + nr.employed*education + nr.employed*contact + nr.employed*month, test)
+x_test = model.matrix(y~job + education + contact + month + duration + pdays + emp.var.rate + cons.conf.idx + nr.employed + pdays*job + pdays*education + pdays*contact + pdays*month + emp.var.rate*job + emp.var.rate*education + emp.var.rate*contact + emp.var.rate*month + cons.conf.idx*job + cons.conf.idx*education + cons.conf.idx*contact + cons.conf.idx*month + nr.employed*job + nr.employed*education + nr.employed*contact + nr.employed*month, test)
 y_test = test$y
 
 ## Creating cv output to determine the best lamda
@@ -431,14 +440,15 @@ best_lam = cv_output$lambda.1se
 ## Rebuilding the model with best lamda value identified
 lasso_best = glmnet(x, y, alpha = 1, lambda = best_lam, family = "binomial")
 
-## Predicts the classifations of the test set
-classifications = predict(lasso_best, newx = x_test, s = "lambda.1se", type= "class")
+## Predicts the classifications of the test set
+lasso_pred = predict(lasso_best, newx = x_test, s = "lambda.1se", type= "response")
 
+cutoff = 0.2
+class.lasso = factor(ifelse(lasso_pred>cutoff,"yes","no"))
+confusionMatrix(class.lasso,test$y)
 ## Creates and prints confusion matrix
-lasso_CM = confusionMatrix(table(classifications, y_test))
-print(lasso_CM)
 
-## Predicts classifation in the format to determine the AUC
+## Predicts classification in the format to determine the AUC
 AUC = predict(lasso_best, newx = x_test, s = "lambda.1se")
 
 ## Assess the performance of the model including AUC
@@ -454,11 +464,14 @@ print(lasso_AUC)
 ```{r}
 
 
-set.seed(88998)
-sample.size <- floor(0.75 * nrow(bank.additional.full.df.numeric.with.Class))
-train_index.numeric <- sample(seq_len(nrow(bank.additional.full.df)), size = sample.size)
-train.numeric  = bank.additional.full.df.numeric.with.Class[train_index.numeric,]
-test.numeric  = bank.additional.full.df.numeric.with.Class[-train_index.numeric,]
+#set.seed(88998)
+#sample.size <- floor(0.75 * nrow(bank.additional.full.df.numeric.with.Class))
+#train_index.numeric <- sample(seq_len(nrow(bank.additional.full.df)), size = sample.size)
+#train.numeric  = bank.additional.full.df.numeric.with.Class[train_index.numeric,]
+#test.numeric  = bank.additional.full.df.numeric.with.Class[-train_index.numeric,]
+
+train.numeric = train[,c(1,10:13,15:20)]
+test.numeric = test[,c(1,10:13,15:20)]
 
 # makes sure for test we have balance classes
  train.numeric = as.data.frame(upSample(x = train.numeric %>% dplyr::select(-!!c("y")), y = train.numeric$y))
@@ -526,15 +539,15 @@ boxm
 ```{r}
 
 
-set.seed(88998)
+#set.seed(88998)
 #same as LDA
-sample.size <- floor(0.75 * nrow(bank.additional.full.df.numeric.with.Class))
-train_index.numeric <- sample(seq_len(nrow(bank.additional.full.df)), size = sample.size)
-train.numeric  = bank.additional.full.df.numeric.with.Class[train_index.numeric,]
-test.numeric  = bank.additional.full.df.numeric.with.Class[-train_index.numeric,]
+#sample.size <- floor(0.75 * nrow(bank.additional.full.df.numeric.with.Class))
+#train_index.numeric <- sample(seq_len(nrow(bank.additional.full.df)), size = sample.size)
+#train.numeric  = bank.additional.full.df.numeric.with.Class[train_index.numeric,]
+#test.numeric  = bank.additional.full.df.numeric.with.Class[-train_index.numeric,]
 
 # makes sure for test we have balance classes
- train.numeric = as.data.frame(upSample(x = train.numeric %>% dplyr::select(-!!c("y")), y = train.numeric$y))
+#train.numeric = as.data.frame(upSample(x = train.numeric %>% dplyr::select(-!!c("y")), y = train.numeric$y))
  
  head(train.numeric)
 
@@ -570,55 +583,51 @@ confusionMatrix(table(predict.qda$class,Y_test.numeric))
 
 #Tree
 ```{r}
+#trainUpscale = as.data.frame(upSample(x = train %>% dplyr::select(-!!c("y")), y = train$y))
 
-y2 <- as.factor(bank$y)
-bank2=data.frame(bank,y2)
+#y2 <- as.factor(bank$y)
+#bank2=data.frame(bank,y2)
 
-set.seed(2)
-train=sample(1:nrow(bank2),20594) #split in half
-bank2.test=bank2[-train,]
+#set.seed(2)
+#train=sample(1:nrow(bank2),20594) #split in half
 
-y2.test=y2[-train]
+y.test=test[,20]
 
-tree.bank2=tree(y2~.-y, bank2, subset=train)
-tree.pred=predict(tree.bank2, bank2.test, type="class")
-table(tree.pred,y2.test)
+tree.bank=tree(y~.-y, train)
+tree.pred=predict(tree.bank, test, type="class")
+table(tree.pred,y.test)
 
-summary(tree.bank2)
+summary(tree.bank)
 
-#Overall Accuracy: TP+TN/total
-(17195+1433)/41188
-#Sensitivity: TP/P
-(1433)/(1433+850)
-#Specificity: TN/N
-(17195)/(17195+1116)
+confusionMatrix(table(tree.pred,y.test))
 
 ```
 
-#Pruning tree CV -- varifies 8 node tree is best
+#Pruning tree CV -- varifies 7 node tree is best
 ```{r}
 set.seed(3)
 par(mfrow=c(1,1))
-cv.bank2=cv.tree(tree.bank2,FUN=prune.misclass)
-names(cv.bank2)
-plot(cv.bank2) #tree is best size already (8)
+cv.bank=cv.tree(tree.bank,FUN=prune.misclass)
+names(cv.bank)
+plot(cv.bank) #tree is best size already (7)
 
 #Fit the pruned tree and visualize
-prune.bank2=prune.misclass(tree.bank2,best=8)
-plot(prune.bank2)
-text(prune.bank2,pretty=0)
+prune.bank=prune.misclass(tree.bank,best=7)
+plot(prune.bank)
+text(prune.bank,pretty=0)
 
-tree.pred=predict(prune.bank2,bank2.test,type="class")
-table(tree.pred,y2.test)
+tree.pred=predict(prune.bank,test,type="class")
+
+confusionMatrix(table(tree.pred,y.test))
 ```
 
 #Tree ROC curve
 ```{r}
-tree.pred=predict(prune.bank2,bank2.test,type="vector")
+tree.pred=predict(prune.bank,test,type="vector")
 head(tree.pred)
 
 library(ROCR)
-pred <- prediction(tree.pred[,2], bank2.test$y2)
+pred <- prediction(tree.pred[,2], test$y)
 roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
 #Note in the following code the term "train" means nothing here. 
 #I'm just rinsing and repeating code the produces the curve.
@@ -628,34 +637,32 @@ plot(roc.perf,main="AUC of Test set of a Single Tree")
 abline(a=0, b= 1)
 text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
 
+
 ```
 
 #Random Forest
 ```{r}
-rf.bank2<-randomForest(y2~.-y,bank2,subset=train,mtry=5,importance=T,ntree=100)
 
-fit.pred<-predict(rf.bank2,newdata=bank2.test,type="response")
-table(fit.pred,bank2.test$y2) #Default prediction uses .5 as cut off you can change it specifying "cutoff" option
 
-#Overall Accuracy: TP+TN/total
-(17599+1216)/41188
-#Sensitivity: TP/P
-(1216)/(1216+1067)
-#Specificity: TN/N
-(17599)/(17599+712)
+rf.bank<-randomForest(y~.-y,train,mtry=5,importance=T,ntree=100, cutoff=c(0.8,0.2))
 
-rf.pred<-predict(rf.bank2,newdata=bank2.test,type="prob")
-pred <- prediction(rf.pred[,2], bank2.test$y2)
+
+fit.pred<-predict(rf.bank,newdata=test,type="response")
+
+confusionMatrix(table(fit.pred,test$y))
+
+rf.pred<-predict(rf.bank,newdata=test,type="prob")
+pred <- prediction(rf.pred[,2], test$y)
 roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
-#Note in the following code the term "train" means nothing here. 
-#I'm just rinsing and repeating code the produces the curve.
+
 auc.train <- performance(pred, measure = "auc")
 auc.train <- auc.train@y.values
 plot(roc.perf,main="AUC of Test set RF - mtry=5")
 abline(a=0, b= 1)
 text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
 
-varImpPlot (rf.bank2,type=1,main="Variable Importance")
-varImpPlot (rf.bank2,type=2,main="Variable Importance")
+varImpPlot (rf.bank,type=1,main="Variable Importance")
+varImpPlot (rf.bank,type=2,main="Variable Importance")
+
 ```
 
